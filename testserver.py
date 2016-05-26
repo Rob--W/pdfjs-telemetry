@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import re
+import ssl
 import unittest
 
 try:
@@ -17,9 +18,17 @@ def get_http_status(url, **kwargs):
                   data=kwargs.get('data', None),
                   headers=kwargs.get('headers', {}))
     try:
+        if url.startswith('https:'):
+            if get_http_status._shouldWarnAboutCertValidation:
+                get_http_status._shouldWarnAboutCertValidation = False
+                print('Warning: Disabling certificate validation for testing')
+            context = ssl._create_unverified_context()
+            return urlopen(req, context=context).getcode()
         return urlopen(req).getcode()
     except HTTPError as e:
         return e.code
+
+get_http_status._shouldWarnAboutCertValidation = True
 
 
 def good_headers():
@@ -38,9 +47,10 @@ class PdfJsLogTest(unittest.TestCase):
     but the tests do NOT check whether the log is actually written.
     '''
 
+    base_url = 'http://localhost:8080'
+
     @classmethod
     def setUpClass(cls):
-        cls.base_url = 'http://localhost:8080'
         cls.assertCanConnect()
 
     @classmethod
@@ -184,6 +194,10 @@ class PdfJsLogTest(unittest.TestCase):
         self.assertFalse(re.match(pattern, str(0xFFFF + 1)),
                          '0xFFFF+1 should not match the version pattern!')
 
+
+class PdfJsLogTestHttps(PdfJsLogTest):
+    base_url = 'https://localhost:8443'
+    # Exactly the same tests as PdfJsLogTest, except using https.
 
 if __name__ == '__main__':
     unittest.main()
