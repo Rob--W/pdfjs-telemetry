@@ -18,7 +18,7 @@ def get_http_status(url, **kwargs):
                   data=kwargs.get('data', None),
                   headers=kwargs.get('headers', {}))
     try:
-        if url.startswith('https:'):
+        if url.startswith('https://localhost'):
             if get_http_status._shouldWarnAboutCertValidation:
                 get_http_status._shouldWarnAboutCertValidation = False
                 print('Warning: Disabling certificate validation for testing')
@@ -78,7 +78,8 @@ class PdfJsLogTest(unittest.TestCase):
     def test_non_existing_404(self):
         self.assertStatus(404, '/')
         self.assertStatus(404, '/favicon.ico')
-        self.assertStatus(404, '/robots.txt')
+        # Actually, robots.txt is supported to avoid getting crawled.
+        self.assertStatus(200, '/robots.txt')
 
         self.assertStatus(404, '/', data=b'')
 
@@ -197,6 +198,11 @@ class PdfJsLogTest(unittest.TestCase):
 
 class PdfJsLogTestHttps(PdfJsLogTest):
     base_url = 'https://localhost:8443'
+    # Exactly the same tests as PdfJsLogTest, except using https.
+
+
+class PdfJsLogProd(PdfJsLogTest):
+    base_url = 'https://pdfjs.robwu.nl'
     # Exactly the same tests as PdfJsLogTest, except using https.
 
 if __name__ == '__main__':
