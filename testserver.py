@@ -60,11 +60,11 @@ class PdfJsLogTest(unittest.TestCase):
         except URLError:
             print('##########################################################')
             print('### Cannot connect to server. Please start it using')
-            print('# nginx -p prefix -c $PWD/nl.robwu.pdfjs.conf')
+            print('# nginx -p prefix -c $PWD/nginx.conf')
             print('### After changing the config, you can reapply it using')
-            print('# nginx -p prefix -c $PWD/nl.robwu.pdfjs.conf -s reload')
+            print('# nginx -p prefix -c $PWD/nginx.conf -s reload')
             print('### And if you are done, quit the server using')
-            print('# nginx -p prefix -c $PWD/nl.robwu.pdfjs.conf -s quit')
+            print('# nginx -p prefix -c $PWD/nginx.conf -s quit')
             print('##########################################################')
             raise
 
