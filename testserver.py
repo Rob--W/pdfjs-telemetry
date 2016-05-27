@@ -35,7 +35,7 @@ def good_headers():
     '''A dictionary of expected good headers.'''
     return {
         'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.94 Safari/537.36',  # NOQA
-        'deduplication-id': '0123456789abcdef0123456789abcdef',
+        'deduplication-id': '0123456789',
         'extension-version': '0',
     }
 
@@ -108,20 +108,29 @@ class PdfJsLogTest(unittest.TestCase):
         del headers['extension-version']
         self.assertStatus(400, '/logpdfjs', data=b'', headers=headers)
 
+    def test_logging_valid_deduplication_id(self):
+        headers = good_headers()
+        headers['deduplication-id'] = '0123abcdef'
+        self.assertStatus(204, '/logpdfjs', data=b'', headers=headers)
+
     def test_logging_invalid_deduplication_id(self):
         # Note that the last character in Deduplication-Id is an uppercase 'F'.
         headers = good_headers()
-        headers['deduplication-id'] = '0123456789abcdef0123456789abcdeF'
+        headers['deduplication-id'] = '012345678F'
+        self.assertStatus(400, '/logpdfjs', data=b'', headers=headers)
+
+        headers = good_headers()
+        headers['deduplication-id'] = '012345678g'
         self.assertStatus(400, '/logpdfjs', data=b'', headers=headers)
 
         # Too short
         headers = good_headers()
-        headers['deduplication-id'] = '0123456789abcdef0123456789abcde'
+        headers['deduplication-id'] = '012345678'
         self.assertStatus(400, '/logpdfjs', data=b'', headers=headers)
 
         # Too long
         headers = good_headers()
-        headers['deduplication-id'] = '0123456789abcdef0123456789abcdef0'
+        headers['deduplication-id'] = '0123456789a'
         self.assertStatus(400, '/logpdfjs', data=b'', headers=headers)
 
     def test_logging_valid_user_agent(self):
