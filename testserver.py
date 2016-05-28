@@ -1,7 +1,14 @@
 #!/usr/bin/env python
 
+import atexit
+import os
 import re
+import signal
 import ssl
+import shutil
+import subprocess
+import tempfile
+import time
 import unittest
 
 try:
@@ -40,33 +47,145 @@ def good_headers():
     }
 
 
-class PdfJsLogTest(unittest.TestCase):
+class LocalServer:
+    instance = None
+    # Let's hard-code them for now.
+    http_port = 8088
+    https_port = 8443
+
+    server_proc = None
+    nginx_root_path = ''
+    nginx_prefix_path = ''
+    nginx_log_path = ''
+
+    @staticmethod
+    def Get():
+        if not LocalServer.instance:
+            LocalServer.instance = LocalServer()
+            LocalServer.instance.start_server()
+        return LocalServer.instance
+
+    def _create_nginx_root_content(self):
+        '''
+        Create a temporary directory containing the the Nginx server's config.
+        '''
+        def src_path(x): return os.path.join(os.path.dirname(__file__), x)
+
+        with open(src_path('nl.robwu.pdfjs.conf')) as f:
+            server_conf = f.read()
+
+        for count, needle, replacement in [
+            # Listen on localhost only.
+            [0, '(?= listen )', ' #'],
+            [1, '(?=# listen.*80;)', 'listen %d; ' % self.http_port],
+            [1, '(?=# listen.*443 ssl;)', 'listen %d ssl; ' % self.https_port],
+
+            # Self-signed test certificates, e.g. via
+            # openssl req -x509 -newkey rsa:2048 -keyout localhost.key -out localhost.crt -nodes -sha256 -subj '/CN=localhost'  # NOQA
+            [1, '( ssl_certificate) .+;', r'\1 localhost.crt;'],
+            [1, '( ssl_certificate_key) .+;', r'\1 localhost.key;'],
+
+            # Write to a temporary access log instead of a system destination.
+            [1, '( access_log) /[^ ]+', r'\1 localhost.log'],
+
+            # Without this, it takes 5 seconds before the logs are flushed.
+            # Also, when worker processes are used, this also slows down
+            # termination by 5s (because workers wait until the sockets are
+            # closed upon a graceful shutdown).
+            [1, 'server {', 'server { lingering_close off;'],
+        ]:
+            rneedle = re.compile(needle)
+            found = rneedle.findall(server_conf)
+            if not found:
+                raise ValueError('Not found in source: %s' % needle)
+            if count and len(found) < count:
+                raise ValueError('Expected %d, but got %d for: %s' % (
+                    count, len(found), needle))
+            server_conf = re.sub(
+                    rneedle, replacement, server_conf, count=count)
+
+        # Generation succeeded, create files.
+
+        nginx_root = tempfile.mkdtemp(prefix='nginx_test_server')
+        with open(os.path.join(nginx_root, 'nl.robwu.pdfjs.conf'), 'w') as f:
+            f.write(server_conf)
+
+        for filename in [
+            'nginx.conf',
+            # For testing, these are actually self-signed certificates.
+            'localhost.crt',
+            'localhost.key',
+        ]:
+            shutil.copyfile(src_path(filename),
+                            os.path.join(nginx_root, filename))
+
+        prefix_path = os.path.join(nginx_root, 'prefix')
+        os.mkdir(prefix_path)
+        # Required by nginx, "temp" as specific in nginx.conf
+        os.mkdir(os.path.join(prefix_path, 'temp'))
+
+        self.nginx_root_path = nginx_root
+        self.nginx_prefix_path = prefix_path
+
+    def start_server(self):
+        '''
+        Start a Nginx server at the given ports.
+        '''
+
+        if not self.nginx_root_path:
+            self._create_nginx_root_content()
+
+        self.nginx_log_path = '%s/localhost.log' % self.nginx_prefix_path
+
+        print('Starting nginx server at %s' % self.nginx_root_path)
+        self.server_proc = subprocess.Popen([
+            'nginx',
+            '-p', self.nginx_prefix_path,
+            '-c', os.path.join(self.nginx_root_path, 'nginx.conf'),
+            '-g', 'daemon off; master_process off;',
+        ])
+
+        atexit.register(self.stop_server)
+
+        # Wait until the server has started (at most a few seconds)
+        for i in range(0, 10):
+            try:
+                get_http_status('http://localhost:%d' % self.http_port)
+                return  # Request succeeded, server started.
+            except URLError:
+                time.sleep(0.2)
+
+    def stop_server(self):
+        self.server_proc.send_signal(signal.SIGQUIT)
+        self.server_proc.wait()
+        self.server_proc = None
+
+    def get_http_base_url(self):
+        return 'http://localhost:%d' % self.http_port
+
+    def get_https_base_url(self):
+        return 'https://localhost:%d' % self.https_port
+
+    def get_log_content(self):
+        # Assume that the logs have been written.
+        # We have set lingering_close to "off", and from Python's side (urllib)
+        # the request has ended, so the log should immediately be flushed.
+        with open(self.nginx_log_path, 'r') as f:
+            return f.read()
+
+
+class TestHttpBase(object):
     '''
     These tests check whether the response from the logging server is OK.
     If the response is 204, it's assumed that an entry is written to the log,
     but the tests do NOT check whether the log is actually written.
     '''
 
-    base_url = 'http://localhost:8080'
-
     @classmethod
     def setUpClass(cls):
-        cls.assertCanConnect()
-
-    @classmethod
-    def assertCanConnect(cls):
-        try:
-            get_http_status(cls.base_url)
-        except URLError:
-            print('##########################################################')
-            print('### Cannot connect to server. Please start it using')
-            print('# nginx -p prefix -c $PWD/nginx.conf')
-            print('### After changing the config, you can reapply it using')
-            print('# nginx -p prefix -c $PWD/nginx.conf -s reload')
-            print('### And if you are done, quit the server using')
-            print('# nginx -p prefix -c $PWD/nginx.conf -s quit')
-            print('##########################################################')
-            raise
+        cls.base_url = cls.get_base_url()
+        # Check whether we can connect before running all other tests.
+        get_http_status(cls.base_url)
 
     def assertStatus(self, expected_status, path, **kwargs):
         http_method = 'POST' if 'data' in kwargs else 'GET'
@@ -205,14 +324,52 @@ class PdfJsLogTest(unittest.TestCase):
                          '0xFFFF+1 should not match the version pattern!')
 
 
-class PdfJsLogTestHttps(PdfJsLogTest):
-    base_url = 'https://localhost:8443'
-    # Exactly the same tests as PdfJsLogTest, except using https.
+class TestLocalBase(object):
+    '''
+    Tests specific to a local Nginx instance.
+    '''
+    def test_did_write_log(self):
+        old_log = LocalServer.Get().get_log_content()
+
+        headers = good_headers()
+        headers['extension-version'] = '1337'
+        self.assertStatus(204, '/logpdfjs', data=b'', headers=headers)
+
+        new_log = LocalServer.Get().get_log_content()
+
+        new_log = new_log[len(old_log):]
+        self.assertNotEqual(new_log, '', 'Expected a new log entry.')
+        self.assertEqual(new_log, '0123456789 1337 "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.94 Safari/537.36"\n')  # NOQA
+
+    def test_did_not_write_log(self):
+        old_log = LocalServer.Get().get_log_content()
+
+        headers = good_headers()
+        headers['extension-version'] = ''
+        self.assertStatus(400, '/logpdfjs', data=b'', headers=headers)
+
+        new_log = LocalServer.Get().get_log_content()
+
+        new_log = new_log[len(old_log):]
+        self.assertEqual(new_log, '', 'Expected a new log entry.')
 
 
-class PdfJsLogProd(PdfJsLogTest):
-    base_url = 'https://pdfjs.robwu.nl'
-    # Exactly the same tests as PdfJsLogTest, except using https.
+class TestHttp(TestHttpBase, TestLocalBase, unittest.TestCase):
+    @staticmethod
+    def get_base_url():
+        return LocalServer.Get().get_http_base_url()
+
+
+class TestHttps(TestHttpBase, TestLocalBase, unittest.TestCase):
+    @staticmethod
+    def get_base_url():
+        return LocalServer.Get().get_https_base_url()
+
+
+class TestProd(TestHttpBase, unittest.TestCase):
+    @staticmethod
+    def get_base_url():
+        return 'https://pdfjs.robwu.nl'
 
 if __name__ == '__main__':
     unittest.main()
