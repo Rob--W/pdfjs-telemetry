@@ -86,6 +86,9 @@ class LocalServer:
             # openssl req -x509 -newkey rsa:2048 -keyout localhost.key -out localhost.crt -nodes -sha256 -subj '/CN=localhost'  # NOQA
             [1, '( ssl_certificate) .+;', r'\1 localhost.crt;'],
             [1, '( ssl_certificate_key) .+;', r'\1 localhost.key;'],
+            # Not really needed because the test server doesn't have OCSP,
+            # but Nginx checks whether the file exists, so rename it.
+            [1, '( ssl_trusted_certificate) .+;', r'\1 localhost.crt;'],
 
             # Write to a temporary access log instead of a system destination.
             [1, '( access_log) /[^ ]+', r'\1 localhost.log'],
