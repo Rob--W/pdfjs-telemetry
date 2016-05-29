@@ -89,8 +89,10 @@ class LocalServer:
         for count, needle, replacement in [
             # Listen on localhost only.
             [0, '(?= listen )', ' #'],
-            [1, '(?=# listen.*80;)', 'listen %d; ' % self.http_port],
-            [1, '(?=# listen.*443 ssl;)', 'listen %d ssl; ' % self.https_port],
+            [1, '(?=# listen .*80;)',
+                'listen 127.0.0.1:%d; ' % self.http_port],
+            [1, '(?=# listen .*443 ssl;)',
+                'listen 127.0.0.1:%d ssl; ' % self.https_port],
 
             # Self-signed test certificates, e.g. via
             # openssl req -x509 -newkey rsa:2048 -keyout localhost.key -out localhost.crt -nodes -sha256 -subj '/CN=localhost'  # NOQA
