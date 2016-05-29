@@ -2,8 +2,11 @@
 
 # This file provides unit tests to verify the correctness of the server at
 # pdfjs.robwu.nl. To run local tests, Nginx must be installed.
+# The local test expects localhost.crt and localhost.key to exist in the
+# directory containing this script. If these are unavailable, they are
+# generated on the fly using openssl (which should then be installed).
 #
-# To run it:
+# To run the tests:
 # ./testserver.py TestHttp TestHttps    # Run test against local Nginx server.
 # ./testserver.py TestProd              # Run test against pdfjs.robwu.nl
 
@@ -121,6 +124,17 @@ class LocalServer:
         nginx_root = tempfile.mkdtemp(prefix='nginx_test_server')
         with open(os.path.join(nginx_root, 'nl.robwu.pdfjs.conf'), 'w') as f:
             f.write(server_conf)
+
+        if not os.path.isfile(src_path('localhost.key')):
+            subprocess.call([
+                'openssl', 'req', '-x509',
+                '-newkey', 'rsa:2048',
+                '-keyout', 'localhost.key',
+                '-out', 'localhost.crt',
+                '-nodes',
+                '-sha256',
+                '-subj', '/CN=localhost'
+            ], cwd=src_path('.'))
 
         for filename in [
             'nginx.conf',
