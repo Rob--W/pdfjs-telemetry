@@ -1,0 +1,16 @@
+/var/log/pdfjs/pdfjs.log {
+  # file name: pdfjs.log-YYYYMMDD
+  daily
+  dateext
+  maxage 366
+
+  compress
+  delaycompress
+  create 0640 root adm
+  sharedscripts
+  postrotate
+    [ ! -f /run/nginx.pid ] || kill -USR1 "$(cat /run/nginx.pid)"
+    # TODO: aggregate results. E.g. To get the stats for the past 7 days (extension version + UA), use:
+    # find /var/log/pdfjs/ -maxdepth 1 -name 'pdfjs.log-*' -type f | sort | tail -n 7 | zcat | sort | uniq | cut 12-
+  endscript
+}
