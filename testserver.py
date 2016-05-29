@@ -1,5 +1,12 @@
 #!/usr/bin/env python
 
+# This file provides unit tests to verify the correctness of the server at
+# pdfjs.robwu.nl. To run local tests, Nginx must be installed.
+#
+# To run it:
+# ./testserver.py TestHttp TestHttps    # Run test against local Nginx server.
+# ./testserver.py TestProd              # Run test against pdfjs.robwu.nl
+
 import atexit
 import os
 import re
@@ -43,7 +50,7 @@ get_http_status._shouldWarnAboutCertValidation = True
 def good_headers():
     '''A dictionary of expected good headers.'''
     return {
-        'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.94 Safari/537.36',  # NOQA
+        'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.94 Safari/537.36 = testserver.py',  # NOQA
         'deduplication-id': '0123456789',
         'extension-version': '0',
     }
@@ -344,7 +351,7 @@ class TestLocalBase(object):
 
         new_log = new_log[len(old_log):]
         self.assertNotEqual(new_log, '', 'Expected a new log entry.')
-        self.assertEqual(new_log, '0123456789 1337 "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.94 Safari/537.36"\n')  # NOQA
+        self.assertEqual(new_log, '0123456789 1337 "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.94 Safari/537.36 = testserver.py"\n')  # NOQA
 
     def test_did_not_write_log(self):
         old_log = LocalServer.Get().get_log_content()
