@@ -13,10 +13,12 @@ import unittest
 
 try:
     # Py3
+    from http.client import BadStatusLine
     from urllib.request import urlopen, Request
     from urllib.error import HTTPError, URLError
 except ImportError:
     # Py2
+    from httplib import BadStatusLine
     from urllib2 import urlopen, HTTPError, Request, URLError
 
 
@@ -370,6 +372,31 @@ class TestProd(TestHttpBase, unittest.TestCase):
     @staticmethod
     def get_base_url():
         return 'https://pdfjs.robwu.nl'
+
+    def test_bad_host(self):
+        headers = good_headers()
+        headers['host'] = 'not.pdfjs.robwu.nl'
+        try:
+            status = get_http_status(self.base_url + '/logpdfjs', data=b'',
+                                     headers=headers)
+            self.assertNotEqual(204, status)
+        except BadStatusLine:
+            pass  # Connection closed, OK!
+
+    def test_http(self):
+        status = get_http_status('http://pdfjs.robwu.nl/logpdfjs',
+                                 data=b'', headers=good_headers())
+        self.assertEqual(204, status)
+
+    def test_http_bad_host(self):
+        headers = good_headers()
+        headers['host'] = 'not.pdfjs.robwu.nl'
+        try:
+            status = get_http_status('http://pdfjs.robwu.nl/logpdfjs',
+                                     data=b'', headers=headers)
+            self.assertNotEqual(204, status)
+        except BadStatusLine:
+            pass  # Connection closed, OK!
 
 if __name__ == '__main__':
     unittest.main()
