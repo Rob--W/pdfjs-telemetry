@@ -1,6 +1,9 @@
 This repository contains the configuration files for pdfjs.robwu.nl. This site
 collects anonymous statistics from the [PDF Viewer Chrome extension](https://github.com/mozilla/pdf.js/wiki/PDF-Viewer-%28Chrome-extension%29)
-("telemetry").
+("telemetry") since version 1.5.285.
+
+[extensions/chromium/telemetry.js](https://github.com/mozilla/pdf.js/blob/master/extensions/chromium/telemetry.js)
+shows the extension code that sends such requests.
 
 ## Privacy policy
 
