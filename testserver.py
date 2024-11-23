@@ -24,30 +24,42 @@ import unittest
 try:
     # Py3
     from http.client import BadStatusLine
-    from urllib.request import urlopen, Request
-    from urllib.error import HTTPError, URLError
+    from urllib.request import HTTPHandler, HTTPSHandler, UnknownHandler
+    from urllib.request import OpenerDirector, Request
+    from urllib.error import URLError
 except ImportError:
     # Py2
     from httplib import BadStatusLine
-    from urllib2 import urlopen, HTTPError, Request, URLError
+    from urllib2 import HTTPHandler, HTTPSHandler, UnknownHandler
+    from urllib2 import OpenerDirector, Request
+    from urllib2 import URLError
 
 
 def get_http_status(url, **kwargs):
+    return get_http_response(url, **kwargs).getcode()
+
+
+def get_http_response(url, **kwargs):
     req = Request(url,
                   data=kwargs.get('data', None),
                   headers=kwargs.get('headers', {}))
-    try:
-        if url.startswith('https://localhost'):
-            if get_http_status._shouldWarnAboutCertValidation:
-                get_http_status._shouldWarnAboutCertValidation = False
-                print('Warning: Disabling certificate validation for testing')
-            context = ssl._create_unverified_context()
-            return urlopen(req, context=context).getcode()
-        return urlopen(req).getcode()
-    except HTTPError as e:
-        return e.code
+    context = None
+    if url.startswith('https://localhost'):
+        if get_http_response._shouldWarnAboutCertValidation:
+            get_http_response._shouldWarnAboutCertValidation = False
+            print('Warning: Disabling certificate validation for localhost')
+        context = ssl._create_unverified_context()
+    # Use OpenerDirector instead of urlopen(req, context=context) to make sure
+    # that we can send requests without automatically following redirects, and
+    # that non-2xx status codes won't raise HTTPError.
+    opener = OpenerDirector()
+    opener.add_handler(HTTPHandler())
+    opener.add_handler(HTTPSHandler(context=context))
+    opener.add_handler(UnknownHandler())
+    return opener.open(req)
 
-get_http_status._shouldWarnAboutCertValidation = True
+
+get_http_response._shouldWarnAboutCertValidation = True
 
 
 def good_headers():
@@ -223,12 +235,24 @@ class TestHttpBase(object):
         self.assertEqual(expected_status, status, msg)
 
     def test_non_existing_404(self):
-        self.assertStatus(404, '/')
+        self.assertStatus(404, '/.well-known/')
         self.assertStatus(404, '/favicon.ico')
         # Actually, robots.txt is supported to avoid getting crawled.
         self.assertStatus(200, '/robots.txt')
 
-        self.assertStatus(404, '/', data=b'')
+        self.assertStatus(404, '/.well-known/', data=b'')
+
+    def test_root_index_response(self):
+        self.assertStatus(302, '/')
+        res = get_http_response(self.base_url + '/')
+        self.assertEqual(
+            res.headers['location'],
+            'https://github.com/mozilla/pdf.js/wiki/PDF-Viewer-(Chrome-extension)',  # NOQA
+            'Expected redirect target at /'
+        )
+
+        # Redirect is independent of HTTP method, also for POST:
+        self.assertStatus(302, '/', data=b'')
 
     def test_logging_invalid_method(self):
         self.assertStatus(405, '/logpdfjs')
@@ -423,6 +447,7 @@ class TestProd(TestHttpBase, unittest.TestCase):
             self.assertNotEqual(204, status)
         except BadStatusLine:
             pass  # Connection closed, OK!
+
 
 if __name__ == '__main__':
     unittest.main()
